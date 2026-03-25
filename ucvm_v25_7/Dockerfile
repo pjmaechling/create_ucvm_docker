@@ -11,12 +11,19 @@ ARG APP_GID
 ARG MODELID
 ARG BDATE
 
-ENV APP_UNAME=$APP_UNAME \
-    APP_GRPNAME=$APP_GRPNAME \
-    APP_UID=$APP_UID \
-    APP_GID=$APP_GID \
-    MODELID=$MODELID \
-    BDATE=$BDATE
+#ENV APP_UNAME=$APP_UNAME \
+#    APP_GRPNAME=$APP_GRPNAME \
+#    APP_UID=$APP_UID \
+#    APP_GID=$APP_GID \
+#    MODELID=$MODELID \
+#    BDATE=$BDATE
+
+ENV APP_UNAME=ucvmuser \
+    APP_GRPNAME=ucvmuser \
+    APP_UID=1000 \
+    APP_GID=1000 \
+    MODELID=cvms \
+    BDATE=03232026
 
 ENV MYHOME=/home/$APP_UNAME
 ENV UCVM_SRC_PATH=$MYHOME/app/src
@@ -45,7 +52,8 @@ RUN echo $APP_UNAME $APP_GRPNAME $APP_UID $APP_GID $MODELID $BDATE
 RUN yum clean all && \
    yum -y update && \
    yum -y groupinstall "Development Tools" && \
-   yum -y install wget yum-utils gcc-gfortran gcc-c++ fftw-devel which perl sudo
+   yum -y install wget yum-utils gcc-gfortran gcc-c++ fftw-devel which perl sudo \
+   zlib-devel libcurl-devel openssl-devel libxml2-devel
 
 RUN yum -y install perl-ExtUtils-MakeMaker perl-Text-Template perl-Pod-Html
 
@@ -75,16 +83,13 @@ ARG PATH="$MYHOME/app/miniconda3/bin:~/.local/bin:$MYHOME/.local/bin:$MYHOME/dot
  
 WORKDIR $MYHOME/app
 
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-py312_24.5.0-0-Linux-x86_64.sh -O anaconda.sh && \
+RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-py312_24.5.0-0-Linux-aarch64.sh -O anaconda.sh && \
     mkdir $MYHOME/.conda && \
     /bin/bash anaconda.sh -b -p $MYHOME/app/miniconda3 && \
     rm -f anaconda.sh && \
     echo "Running $(conda --version)" && \
     conda update conda && \
     conda init bash
-
-RUN conda install -y scipy pip numpy matplotlib basemap basemap-data-hires && \
-    conda create -n plotPython
 
 # Retrieve and build UCVM
 WORKDIR $MYHOME/app
@@ -96,8 +101,13 @@ WORKDIR $UCVM_SRC_PATH/largefiles
 RUN ./get_largefiles.py -m $MODELID && ./stage_largefiles.py
 
 WORKDIR $UCVM_SRC_PATH
-RUN ./ucvm_setup.py -a -d -p $UCVM_INSTALL_PATH >& ./ucvm_setup_install.log
+#RUN ./ucvm_setup.py -a -d -p $UCVM_INSTALL_PATH >& ./ucvm_setup_install.log
+RUN ./ucvm_setup.py -a -d -p /home/ucvmuser/app/ucvm 2>&1 | tee ./ucvm_setup_install.log || (echo "=== UCVM Setup Failed ===" && cat ./ucvm_setup_install.log && exit 1)
 RUN chmod -R +r $UCVM_INSTALL_PATH/model
+
+WORKDIR $MYHOME/app
+RUN conda install -y --solver=classic -c conda-forge netcdf4 libnetcdf scipy pip numpy matplotlib basemap basemap-data-hires && \
+    conda create -n plotPython
 
 # Remove the src directories to save space
 #WORKDIR $MYHOME/app
@@ -149,4 +159,3 @@ RUN echo "source $MYHOME/app/ucvm/conf/ucvm_env.sh" >> $MYHOME/.bashrc && \
 # Set working directory
 WORKDIR $MYHOME
 ENTRYPOINT ["/bin/bash", "--login"]
-
